@@ -1,28 +1,60 @@
-******************* sorta copied from https://tttapa.github.io/ESP8266/Chap07%20-%20Wi-Fi%20Connections.html
-
+// ******************* sorta copied from https://tttapa.github.io/ESP8266/Chap07%20-%20Wi-Fi%20Connections.html and https://github.com/ESP32-Work/ESP32_Webserver/tree/main/ESP32_WebServer 
+// https://avantmaker.com/references/esp32-arduino-core-index/esp32-webserver-library/ for webserver library documentation was kinda hard to find
 
 ESP-32 access point config, mDNS setup
 #include <WiFi.h>        // Include the Wi-Fi library
 #include <WiFiMulti.h>   // Include the Wi-Fi Multi library
+#include <WiFiClient.h>  // WifiClient Library
+#include <WebServer.h>   // Webserver Library
+#include <FS.h>   // Include the SPIFFS library. This allows us to create a proper filesystem that we can store our webpages on, rather than storing them on memory which is limited. 
 
-const char *ssid = "Access Point"; // The name of the Wi-Fi network that will be created
-const char *password = "";   // The password required to connect to it, leave blank for an open network
+
+WebServer server(80);  // Create a webserver object that listens for HTTP request on port 80
+
+const char *sta_ssid = "iBone"; // My iphones hotspot name
+const char *sta_password = "12345678";
+
+const char *ap_ssid = "Access Point"; // The name of the Wi-Fi network that will be created
+const char *ap_password = "";   // The password required to connect to it, leave blank for an open network
 
 void setup() {
   Serial.begin(115200);
   delay(10);
   Serial.println('\n');
 
-  WiFi.softAP(ssid, password);             // Start the access point
+  WiFi.mode(WIFI_AP_STA); //enable both access point and station modes
+  WiFi.softAP(ap_ssid, ap_password);             // Start the access point
+  WiFi.begin(sta_ssid, sta_password);            // Connect to an existing wifi network (my phone)
+
   Serial.print("Access Point \"");
   Serial.print(ssid);
   Serial.println("\" started");
 
+  if (MDNS.begin("potplant")) {              // Start the mDNS responder for potplant.local
+  Serial.println("mDNS responder started");
+  } else {
+  Serial.println("Error setting up MDNS responder!");
+  }
+
+  server.on("/", handleRoot);               // Call the 'handleRoot' function when a client requests URI "/"
+  server.onNotFound(handleNotFound);        // When a client requests an unknown URI (i.e. something other than "/"), call function "handleNotFound"
+
   Serial.print("IP address:\t");
-  Serial.println(WiFi.softAPIP());         // Send the IP address of the ESP8266 to the computer
+  Serial.println(WiFi.softAPIP());         // Send the IP address of the ESP32 to the computer
 }
 
-void loop() { }
+
+void loop() { 
+  server.handleClient();
+}
+
+void handleRoot() {                                 // These are frameworks for handling webpage requests. In the first case this method handles a request for the webpage /potplant.local/. We'll need to amend this to actually implent our homepage for the potplant
+  server.send(200, "text/plain", "Hello world!");   // Send HTTP status 200 (Ok) and send some text to the browser/client
+}
+
+void handleNotFound(){                              // This method handles webpages of the form /potplant.local/xxx where xxx is some string not defined elsewhere
+  server.send(404, "text/plain", "404: Not found"); // Send HTTP status 404 (Not Found) when there's no handler for the URI in the request
+}
 
 
 
