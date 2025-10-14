@@ -82,11 +82,11 @@ function fetchNotesFromESP32() {
       }
       return response.text();
     })
-    .then(data => {
-      console.log('Fetched notes:', data);
+    .then(text => {
+      console.log('Fetched notes:', text);
 
       // Parse each line into entries
-      const lines = data.split('\n').filter(line => line.trim().length > 0);
+      const lines = text.split('\n').filter(line => line.trim().length > 0);
 
       entryQueue = [];  // clear current entries to avoid duplicates
 

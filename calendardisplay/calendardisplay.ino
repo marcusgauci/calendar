@@ -225,6 +225,10 @@ void startServer() { // Start a HTTP server with a file read handler
     }
   });
 
+  server.on("/", handleRoot);
+
+  server.on("/notes.txt", handleNotes);  // when a client requests the /notes.txt file, go to function 'handleNotes'
+
   server.on("/time", handleTime);
 
   server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound'
@@ -238,10 +242,29 @@ void handleTime() {
   server.send(200, "text/plain", getTimeString());
 }
 
+void handleNotes() { // when a client requests the /notes.txt file
+  if (LittleFS.exists("/notes.txt")) {       // check if the file exists
+    File file = LittleFS.open("/notes.txt", "r"); // open the file
+    String fileContent;
+    while(file.available()){
+      fileContent += char(file.read());
+    }
+    file.close();
+    server.stream(file, "text/plain"); // send the content of the file to the client
+  } else {
+    server.send(404, "text/plain", "Notes file not found"); // if the file doesn't exist, return a 404 not found error
+  }
+}
+
 void handleNotFound(){ // if the requested file or page doesn't exist, return a 404 not found error
   if(!handleFileRead(server.uri())){          // check if the file exists in the flash memory (SPIFFS), if so, send it
     server.send(404, "text/plain", "404: File Not Found");
   }
+}
+
+void handleRoot() { // when a client requests the root page ("/")
+  if(!handleFileRead("/calendar.html"))         // send the index file to the client
+    server.send(404, "text/plain", "404: File Not Found");
 }
 
 bool handleFileRead(String path) { // send the right file to the client (if it exists)
