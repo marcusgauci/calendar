@@ -211,20 +211,6 @@ void startMDNS() { // Start the mDNS responder
 
 void startServer() { // Start a HTTP server with a file read handler
 
-  server.on("/notes.txt", HTTP_GET, []() {
-    if (LittleFS.exists("/notes.txt")) {
-      File file = LittleFS.open("/notes.txt", "r");
-      String fileContent;
-      while(file.available()){
-        fileContent += char(file.read());
-      }
-      file.close();
-      server.send(200, "text/plain", fileContent);
-    } else {
-      server.send(404, "text/plain", "Notes file not found");
-    }
-  });
-
   server.on("/", handleRoot);
 
   server.on("/notes.txt", handleNotes);  // when a client requests the /notes.txt file, go to function 'handleNotes'
@@ -240,20 +226,6 @@ void startServer() { // Start a HTTP server with a file read handler
 
 void handleTime() {
   server.send(200, "text/plain", getTimeString());
-}
-
-void handleNotes() { // when a client requests the /notes.txt file
-  if (LittleFS.exists("/notes.txt")) {       // check if the file exists
-    File file = LittleFS.open("/notes.txt", "r"); // open the file
-    String fileContent;
-    while(file.available()){
-      fileContent += char(file.read());
-    }
-    file.close();
-    server.stream(file, "text/plain"); // send the content of the file to the client
-  } else {
-    server.send(404, "text/plain", "Notes file not found"); // if the file doesn't exist, return a 404 not found error
-  }
 }
 
 void handleNotFound(){ // if the requested file or page doesn't exist, return a 404 not found error
@@ -462,6 +434,7 @@ String getDateString() {
 String getContentType(String filename) { // determine the filetype of a given filename, based on the extension
   if (filename.endsWith(".html")) return "text/html";
   else if (filename.endsWith(".css")) return "text/css";
+  else if (filename.endswith(".txt")) return "text/plain";
   else if (filename.endsWith(".js")) return "application/javascript";
   else if (filename.endsWith(".ico")) return "image/x-icon";
   else if (filename.endsWith(".gz")) return "application/x-gzip";
