@@ -43,7 +43,7 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 10*3600; //australia is gmt +10
 const int   daylightOffset_sec = 3600;
 
-int lastmillis = 0;  // will store last time screen was updated
+int lastscreen = 0;  // will store last time screen was updated
 int interval = 5*1000; // interval at which to update display (milliseconds)
 
 
@@ -51,8 +51,6 @@ WiFiMulti wifiMulti;       // Create an instance of the ESP8266WiFiMulti class, 
 
 WebServer server(80);       // Create a webserver object that listens for HTTP request on port 80 
 WebSocketsServer webSocket(81);    // create a websocket server on port 81
-
-File fsUploadFile;                 // a File variable to temporarily store the received file
 
 const char *ssid = "ESP32 Access Point"; // The name of the Wi-Fi network that will be created
 const char *password = "";   // The password required to connect to it, leave blank for an open network
@@ -79,7 +77,7 @@ void setup() {
   
   startMDNS();                 // Start the mDNS responder
 
-  startServer();               // Start a HTTP server with a file read handler and an upload handler
+  startServer();               // Start a HTTP server with a file read handler
 
     // Init and get time
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
@@ -116,8 +114,8 @@ void loop() {
   ArduinoOTA.handle();                        // listen for OTA events
   checkSerialCommand();  
 
-  if (millis() - lastmillis > interval) {  // if the time since the last update is bigger than the interval
-    lastmillis = millis();                    // save the last time you updated the screen
+  if (millis() - lastscreen > interval) {  // if the time since the last update is bigger than the interval
+    lastscreen = millis();                    // save the last time you updated the screen
 
     set_time(getTimeString());
     set_date(getDateString());
@@ -211,10 +209,7 @@ void startMDNS() { // Start the mDNS responder
   Serial.println(".local");
 }
 
-void startServer() { // Start a HTTP server with a file read handler and an upload handler
-  server.on("/edit.html",  HTTP_POST, []() {  // If a POST request is sent to the /edit.html address,
-    server.send(200, "text/plain", ""); 
-  }, handleFileUpload);                       // go to 'handleFileUpload'
+void startServer() { // Start a HTTP server with a file read handler
 
   server.on("/notes.txt", HTTP_GET, []() {
     if (LittleFS.exists("/notes.txt")) {
@@ -265,35 +260,6 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
   }
   Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
   return false;
-}
-
-void handleFileUpload(){ // upload a new file to the file system
-  HTTPUpload& upload = server.upload();
-  String path;
-  if(upload.status == UPLOAD_FILE_START){
-    path = upload.filename;
-    if(!path.startsWith("/")) path = "/"+path;
-    if(!path.endsWith(".gz")) {                          // The file server always prefers a compressed version of a file 
-      String pathWithGz = path+".gz";                    // So if an uploaded file is not compressed, the existing compressed
-      if(LittleFS.exists(pathWithGz))                      // version of that file must be deleted (if it exists)
-         LittleFS.remove(pathWithGz);
-    }
-    Serial.print("handleFileUpload Name: "); Serial.println(path);
-    fsUploadFile = LittleFS.open(path, "w");            // Open the file for writing in SPIFFS (create if it doesn't exist)
-    path = String();
-  } else if(upload.status == UPLOAD_FILE_WRITE){
-    if(fsUploadFile)
-      fsUploadFile.write(upload.buf, upload.currentSize); // Write the received bytes to the file
-  } else if(upload.status == UPLOAD_FILE_END){
-    if(fsUploadFile) {                                    // If the file was successfully created
-      fsUploadFile.close();                               // Close the file again
-      Serial.print("handleFileUpload Size: "); Serial.println(upload.totalSize);
-      server.sendHeader("Location","/success.html");      // Redirect the client to the success page
-      server.send(303);
-    } else {
-      server.send(500, "text/plain", "500: couldn't create file");
-    }
-  }
 }
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) { // When a WebSocket message is received
