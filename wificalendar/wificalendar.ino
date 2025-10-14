@@ -8,8 +8,12 @@
 #include <ESPmDNS.h>
 #include "FS.h"
 #include <WebSocketsServer.h>
-//#include "SPIFFS.h"
 
+#include "time.h"
+
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffset_sec = 36000;
+const int   daylightOffset_sec = 3600;
 
 
 WiFiMulti wifiMulti;       // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
@@ -25,13 +29,6 @@ const char *password = "";   // The password required to connect to it, leave bl
 const char *OTAName = "ESP32";           // A name and a password for the OTA service
 const char *OTAPassword = "esp32";
 
-
-
-#define LED_RED     15            // specify the pins with an RGB LED connected
-#define LED_GREEN   12
-#define LED_BLUE    13
-
-
 const char* mdnsName = "potplant"; // Domain name for the mDNS responder
 
 void setup() {
@@ -40,10 +37,6 @@ void setup() {
   Serial.begin(115200);        // Start the Serial communication to send messages to the computer
   delay(10);
   Serial.println("\r\n");
-
-  digitalWrite(RGB_BUILTIN, HIGH);
-  delay(1000);
-  digitalWrite(RGB_BUILTIN, LOW);
 
   startWiFi();                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
   
@@ -56,6 +49,14 @@ void setup() {
   startMDNS();                 // Start the mDNS responder
 
   startServer();               // Start a HTTP server with a file read handler and an upload handler
+
+    // Init and get time
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
   
 }
 
@@ -69,15 +70,6 @@ void loop() {
   server.handleClient();                      // run the server
   ArduinoOTA.handle();                        // listen for OTA events
   checkSerialCommand();  
-
-  if(rainbow) {                               // if the rainbow effect is turned on
-    if(millis() > prevMillis + 32) {          
-      if(++hue == 360)                        // Cycle through the color wheel (increment by one degree every 32 ms)
-        hue = 0;
-      setHue(hue);                            // Set the RGB LED to the right color
-      prevMillis = millis();
-    }
-  }
 }
 
 void startWiFi() { // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
@@ -87,8 +79,6 @@ void startWiFi() { // Start a Wi-Fi access point, and try to connect to some giv
   Serial.println("\" started\r\n");
 
   wifiMulti.addAP("iBone", "12345678");   // add Wi-Fi networks you want to connect to
-  //wifiMulti.addAP("ssid_from_AP_2", "your_password_for_AP_2");
-  //wifiMulti.addAP("ssid_from_AP_3", "your_password_for_AP_3");
 
   Serial.println("Connecting");
   while (wifiMulti.run() != WL_CONNECTED && WiFi.softAPgetStationNum() < 1) {  // Wait for the Wi-Fi to connect
@@ -113,7 +103,6 @@ void startOTA() { // Start the OTA service
 
   ArduinoOTA.onStart([]() {
     Serial.println("Start");
-    rgbLedWrite(RGB_BUILTIN, 0, 0, 0);    // turn off the LEDs
   });
   ArduinoOTA.onEnd([]() {
     Serial.println("\r\nEnd");
@@ -184,11 +173,17 @@ void startServer() { // Start a HTTP server with a file read handler and an uplo
     }
   });
 
+  server.on("/time", handleTime);
+
   server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound'
                                               // and check if the file exists
 
   server.begin();                             // start the HTTP server
   Serial.println("HTTP server started.");
+}
+
+void handleTime() {
+  server.send(200, "text/plain", getTimeString());
 }
 
 void handleNotFound(){ // if the requested file or page doesn't exist, return a 404 not found error
@@ -282,6 +277,13 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 // Function to update or add an entry to notes.txt
 void updateOrAddEntry(const String& date, const String& note) {
   File file = LittleFS.open("/notes.txt", "r");
+  int size = note.length();
+  String newnote = "";
+  
+  if (size != 1){
+    newnote += note;
+  }
+
   String newContent = "";
   bool found = false;
 
@@ -291,7 +293,11 @@ void updateOrAddEntry(const String& date, const String& note) {
       line.trim();
 
       if (line.startsWith(date + ":")) {
-        newContent += date + ": " + note + "\n";  // Overwrite old entry
+        if (size != 1){
+        newContent += date + ": " + newnote + "\n"; 
+        } else {
+         newContent += "";  
+        } // Overwrite old entry
         found = true;
       } else if (line.length() > 0) {
         newContent += line + "\n";  // Keep other lines
@@ -302,7 +308,7 @@ void updateOrAddEntry(const String& date, const String& note) {
 
   // If not found, append new line
   if (!found) {
-    newContent += date + ": " + note + "\n";
+    newContent += date + ": " + newnote + "\n";
   }
 
   // Overwrite file
@@ -317,6 +323,30 @@ void updateOrAddEntry(const String& date, const String& note) {
   //Serial.println("Entry saved for " + date);
 }
 
+String chooseDateNote(const String date) {
+  File file = LittleFS.open("/notes.txt", "r");
+  String todaysItem = "";
+  bool found = false;
+
+  if (file) {
+    while (file.available()) {
+      String line = file.readStringUntil('\n');
+      line.trim();
+
+      if (line.startsWith(date + ":")) {
+        int sepIndex = line.indexOf(':');
+        String note = line.substring(sepIndex + 2);
+        found = true;
+        return note;
+      }
+    }
+    file.close();
+  }
+  if (!found) {
+    return "Nothing on today brochacho";
+  }
+}
+
 void checkSerialCommand() {
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
@@ -324,12 +354,15 @@ void checkSerialCommand() {
 
     if (input == "notes") {
       printNotesToSerial();
+    } else if (input == "today"){
+      Serial.println("--- Today's Item ---");
+      Serial.println(chooseDateNote(getDateString()));
+      Serial.println("--------------------");
     } else {
-      Serial.println("Unknown command. Try: show");
+      Serial.println("Unknown command. Try: notes for full note dump, or today for today's item");
     }
   }
 }
-
 void printNotesToSerial() {
   if (!LittleFS.exists("/notes.txt")) {
     Serial.println("No notes found.");
@@ -361,6 +394,26 @@ String formatBytes(size_t bytes) { // convert sizes in bytes to KB and MB
   }
 }
 
+String getTimeString() {
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)) {
+    return "Time not available";
+  }
+  char buffer[64];
+  strftime(buffer, sizeof(buffer), "%H:%M:%S", &timeinfo);
+  return String(buffer);
+}
+
+String getDateString() {
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)) {
+    return "Date not available";
+  }
+  char buffer[64];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d", &timeinfo);
+  return String(buffer);
+}
+
 String getContentType(String filename) { // determine the filetype of a given filename, based on the extension
   if (filename.endsWith(".html")) return "text/html";
   else if (filename.endsWith(".css")) return "text/css";
@@ -370,32 +423,7 @@ String getContentType(String filename) { // determine the filetype of a given fi
   return "text/plain";
 }
 
-void setHue(int hue) { // Set the RGB LED to a given hue (color) (0° = Red, 120° = Green, 240° = Blue)
-  hue %= 360;                   // hue is an angle between 0 and 359°
-  float radH = hue*3.142/180;   // Convert degrees to radians
-  float rf, gf, bf;
-  
-  if(hue>=0 && hue<120){        // Convert from HSI color space to RGB              
-    rf = cos(radH*3/4);
-    gf = sin(radH*3/4);
-    bf = 0;
-  } else if(hue>=120 && hue<240){
-    radH -= 2.09439;
-    gf = cos(radH*3/4);
-    bf = sin(radH*3/4);
-    rf = 0;
-  } else if(hue>=240 && hue<360){
-    radH -= 4.188787;
-    bf = cos(radH*3/4);
-    rf = sin(radH*3/4);
-    gf = 0;
-  }
-  int r = rf*rf*1023;
-  int g = gf*gf*1023;
-  int b = bf*bf*1023;
-  
-  rgbLedWrite(RGB_BUILTIN, g, r, b);    // Write the right color to the LED output pins
-}
+
 
 
 
