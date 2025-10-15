@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Interactive Calendar with Notes</title>
+  <link rel="stylesheet" href="calendarstyles.css">
+</head>
+<body>
+  <div class="calendar">
+    <div class="calendar-header">
+      <div>Florah</div>
+    </div>
+    <!-- Charts Section Start -->
+    <div class="charts-container">
+      <div class="chart-rect" id="chart1"><canvas id="chartCanvas1"></canvas></div>
+      <div class="chart-rect" id="chart2"><canvas id="chartCanvas2"></canvas></div>
+      <div class="chart-rect" id="chart3"><canvas id="chartCanvas3"></canvas></div>
+    </div>
+    <!-- Charts Section End -->
+    <div class="calendar-footer">
+      <button id="home-btn">Calendar</button>
+      <h1 id="clock">Loading time...</h1>
+    </div>
+    
+  </div>
+  
+  <script src="script.js"></script>
+</body>
+</html>

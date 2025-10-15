@@ -9,6 +9,10 @@
 #include "FS.h"
 #include <WebSocketsServer.h>
 
+#include <Wire.h>
+#include "SparkFun_VEML6030_Ambient_Light_Sensor.h"
+#include <dht.h>
+
 #include "time.h"
 
 #include <SPI.h>
@@ -16,6 +20,24 @@
 #include "epdpaint.h"
 #include <stdio.h>
 #include "icons.h"
+
+#define DHT11_PIN 3 // will need to change this for esp32
+#define SOIL_PIN 2 // will need to change this for esp32
+
+#define AL_ADDR 0x10 // I2C Address
+
+// Possible values: .125(1/8), .25(1/4), 1, 2
+// Both .125 and .25 should be used in most cases except darker rooms.
+// A gain of 2 should only be used if the sensor will be covered by a dark
+// glass.
+float gain = .125;
+// Possible integration times in milliseconds: 800, 400, 200, 100, 50, 25
+// Higher times give higher resolutions and should be used in darker light. 
+int time = 100;
+int button_state;
+
+unsigned long lastlight = 0;  // will store last time light was read
+int lightinterval = 10*1000; // interval at which to read light (milliseconds)
 
 Epd epd;
 unsigned char image[1024];
@@ -43,9 +65,11 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 10*3600; //australia is gmt +10
 const int   daylightOffset_sec = 3600;
 
-int lastscreen = 0;  // will store last time screen was updated
-int interval = 5*1000; // interval at which to update display (milliseconds)
+unsigned long lastscreen = 0;  // will store last time screen was updated
+int screeninterval = 5*1000; // interval at which to update display (milliseconds)
 
+unsigned long lastpoll = 0;  // will store last time data was polled
+int pollinginterval = 0.1*1000; // interval at which to poll data (milliseconds
 
 WiFiMulti wifiMulti;       // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 
@@ -105,6 +129,28 @@ void setup() {
   draw_bitmap(&paint, faces[state], 100, 190, 40, 40, COLORED);
 
   epd.DisplayFrame();
+
+  Wire.begin();
+  Serial.begin(115200);
+
+  if(light.begin())
+    Serial.println("Ready to sense some light!"); 
+  else
+    Serial.println("Could not communicate with the sensor!");
+
+  // Again the gain and integration times determine the resolution of the lux
+  // value, and give different ranges of possible light readings. Check out
+  // hoookup guide for more info. 
+  light.setGain(gain);
+  light.setIntegTime(time);
+
+  Serial.println("Reading settings..."); 
+  Serial.print("Gain: ");
+  float gainVal = light.readGain();
+  Serial.print(gainVal, 3); 
+  Serial.print(" Integration Time: ");
+  int timeVal = light.readIntegTime();
+  Serial.println(timeVal);
   
 }
 
@@ -112,18 +158,46 @@ void loop() {
   webSocket.loop();                           // constantly check for websocket events
   server.handleClient();                      // run the server
   ArduinoOTA.handle();                        // listen for OTA events
-  checkSerialCommand();  
+  checkSerialCommand(); 
+  
+  int lightlevel = DetectLight();
+  int moisturelevel = 12;
+  int temperature = round(DetectTemp());
 
-  if (millis() - lastscreen > interval) {  // if the time since the last update is bigger than the interval
+  if (millis() - lastpoll > pollinginterval) {  // if the time since the last update is bigger than the interval
+    lastpoll = millis();
+    
+    addToDataTable("/light.txt", lightlevel, 100);
+    addToDataTable("/moisture.txt", moisturelevel, 100); 
+    addToDataTable("/temp.txt", temperature, 100);
+    
+  }
+
+  if (millis() - lastscreen > screeninterval) {  // if the time since the last update is bigger than the interval
     lastscreen = millis();                    // save the last time you updated the screen
+
 
     set_time(getTimeString());
     set_date(getDateString());
     set_message(chooseDateNote(getDateString()));
+    set_moisture(moisturelevel);
+    set_light(lightlevel);
+    set_temp(temperature);  
 
     draw_bitmap(&paint, faces[state], 100, 190, 40, 40, COLORED);
 
     epd.DisplayFrame();
+  }
+
+  Serial.print("Ambient Light Reading: ");
+  Serial.print(DetectLight());
+  Serial.println(" Lux");
+  Serial.print("Temperature = ");
+  Serial.println(DetectTemp());
+  if (millis() - lastlight > lightinterval) {  // if the time since the last update is bigger than the interval
+    lastlight = millis();                    // save the last time you updated the screen
+    int sensor_value = analogRead(SOIL_PIN);
+    Serial.println(sensor_value);
   }
 }
 
@@ -211,10 +285,6 @@ void startMDNS() { // Start the mDNS responder
 
 void startServer() { // Start a HTTP server with a file read handler
 
-  server.on("/", handleRoot);
-
-  server.on("/notes.txt", handleNotes);  // when a client requests the /notes.txt file, go to function 'handleNotes'
-
   server.on("/time", handleTime);
 
   server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound'
@@ -234,14 +304,9 @@ void handleNotFound(){ // if the requested file or page doesn't exist, return a 
   }
 }
 
-void handleRoot() { // when a client requests the root page ("/")
-  if(!handleFileRead("/calendar.html"))         // send the index file to the client
-    server.send(404, "text/plain", "404: File Not Found");
-}
-
 bool handleFileRead(String path) { // send the right file to the client (if it exists)
   Serial.println("handleFileRead: " + path);
-  if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
+  if (path.endsWith("/")) path += "calendar.html";          // If a folder is requested, send the index file
   String contentType = getContentType(path);             // Get the MIME type
   String pathWithGz = path + ".gz";
   if (LittleFS.exists(pathWithGz) || LittleFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
@@ -340,7 +405,7 @@ void updateOrAddEntry(const String& date, const String& note) {
   //Serial.println("Entry saved for " + date);
 }
 
-String chooseDateNote(const String date) {
+String chooseDateNote(const String& date) {
   File file = LittleFS.open("/notes.txt", "r");
   String todaysItem = "";
   bool found = false;
@@ -611,7 +676,54 @@ void draw_bitmap(Paint* paint, const unsigned char* bitmap, int x0, int y0, int 
 }
 
 
+int DetectLight() {
+  long luxVal = light.readLight();
+  return luxVal;
+}
 
+float DetectTemp() {
+  int chk = DHT.read11(DHT11_PIN); 
+
+  if (chk == DHTLIB_OK) {
+    return DHT.temperature; 
+  } else {
+    Serial.print("DHT read failed. Error code: ");
+    Serial.println(chk);
+    return -999;                 
+  }
+}
+
+void addToDataTable(const String path, const String value, const int num_values) {
+  File file = LittleFS.open(path, "r");
+
+  String newContent = value + "\n"; // Header
+
+  if (file) {
+    int index = 0;
+    while (file.available() && index < num_values) {
+      String line = file.readStringUntil('\n');
+      line.trim();
+      
+      newContent += line + "\n";  // Keep other lines
+      index++;
+    }
+    if (index < num_values) {
+      newContent += "0\n"; // Append new value if there's space
+      index++;
+    }
+    file.close();
+  }
+
+  // Overwrite file
+  File writeFile = LittleFS.open(path, "w");
+  if (!writeFile) {
+    Serial.println("Failed to write to file.");
+    return;
+  }
+  writeFile.print(newContent);
+  writeFile.close();
+
+}
 
 
 

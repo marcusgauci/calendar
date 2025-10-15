@@ -1,0 +1,209 @@
+body {
+  font-family: "Poppins", Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px;
+  background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+  color: #2e3d27;
+}
+
+/* Calendar container */
+.calendar {
+  background: #ffffff;
+  border-radius: 16px;
+  overflow: hidden;
+  width: 850px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  border: 3px solid #c8e6c9;
+  transition: box-shadow 0.3s ease;
+}
+
+.calendar:hover {
+  box-shadow: 0 10px 25px rgba(56, 142, 60, 0.2);
+}
+
+/* Header */
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(90deg, #388e3c, #66bb6a);
+  color: #fff;
+  padding: 20px;
+  font-size: 1.8em;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.calendar-header button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: rgba(255, 255, 255, 0);
+  border: none;
+  color: white;
+  font-size: 1.8em;
+  cursor: pointer;
+  border-radius: 25%;
+  width: 45px;
+  height: 45px;
+  transition: background 0.3s ease, transform 0.2s ease;
+  line-height: 1; /* Prevent text misalignment */
+}
+
+.calendar-header button:hover {
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1.5);
+}
+
+.calendar-header button:active {
+  transform: scale(0.95);
+}
+
+/* Days of the week */
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  background: #dcedc8;
+  text-align: center;
+  padding: 12px 0;
+  font-weight: 600;
+  font-size: 1.1em;
+  letter-spacing: 0.5px;
+  color: #2e7d32;
+}
+
+/* Calendar grid */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  padding: 10px;
+  background: #f9fff7;
+}
+
+/* Individual day cells */
+.calendar-grid div {
+  position: relative; /* Essential for absolute positioning of children */
+  border: 1px solid #c8e6c9;
+  padding: 8px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  font-size: 1em;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  background: #ffffff;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  min-height: 30px;
+}
+
+.calendar-grid div:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(56, 142, 60, 0.15);
+}
+
+.calendar-grid div > div:first-child {
+  font-weight: bold;
+  margin-bottom: 5px;
+  color: #2e7d32;
+}
+
+.calendar-grid div > small{
+  position: absolute;
+  bottom: 10px; /* Adjust as needed */
+  right: 12px; /* Adjust as needed */
+  z-index: 10; /* Ensure it appears above the textarea */
+  color: #ff000000;
+}
+
+.calendar-grid textarea:focus ~ small{
+  color: #2e3d27;
+}
+
+/* Text area styling */
+.calendar-grid textarea {
+  font-family: "Poppins", Arial, sans-serif;
+  width: 100%;
+  resize: none;
+  overflow: hidden;
+  font-size: 1em;
+  padding: 8px;
+  box-sizing: border-box;
+  border: 1px solid #a5d6a7;
+  border-radius: 6px;
+  background: #f1f8e9;
+  color: #33691e;
+  flex-grow: 1;
+  line-height: 1.4;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+  min-height: 50px;
+}
+
+.calendar-grid textarea:focus {
+  border-color: #66bb6a;
+  background-color: #ffffff;
+  outline: none;
+}
+
+/* Character counter */
+.char-counter {
+  margin-top: 5px;
+  font-size: 0.75em;
+  color: #4e6e45;
+  align-self: flex-end;
+}
+
+.calendar-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(90deg, #388e3c, #66bb6a);
+  color: #fff;
+  padding: 20px;
+  font-size: 1.8em;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.calendar-footer h1 {
+  font-size: 1em;
+}
+
+.calendar-footer button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #f1f8e9;
+  border: 3px solid #c8e6c9;
+  color: #4e6e45;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 16px;
+  width: 90px;
+  height: 45px;
+  transition: background 0.3s ease, transform 0.2s ease;
+  line-height: 1; /* Prevent text misalignment */
+}
+
+.calendar-footer button:hover {
+  transform: scale(1.05);
+}
+
+.calendar-footer button:active {
+  transform: scale(0.95);
+}
+
+.calendar-grid .current-date {
+  background: #e8f5e9; /* light green background */
+  border: 2px solid #43a047; /* plant green border */
+  box-shadow: 0 0 8px rgba(67, 160, 71, 0.3);
+  border-radius: 10px;
+}
+
+.calendar-grid .current-date > div:first-child {
+  color: #1b5e20;
+  font-weight: 700;
+}
