@@ -1,13 +1,17 @@
 #include <LittleFS.h>
 #include <Arduino.h>
+#include "FS.h"
+
 
 #include <WiFi.h>
 #include <WiFiMulti.h>
-#include <ArduinoOTA.h>
+
 #include <WebServer.h>
 #include <ESPmDNS.h>
-#include "FS.h"
+
 #include <WebSocketsServer.h>
+
+#include <ArduinoOTA.h>
 
 #include <Wire.h>
 #include "SparkFun_VEML6030_Ambient_Light_Sensor.h"
@@ -16,8 +20,9 @@
 #include "time.h"
 
 #include <SPI.h>
-#include "epd1in54_V2.h"
-#include "epdpaint.h"
+#include "EPD_1in54_V2.h"
+#include "GUI_Paint.h"
+#include "DEV_Config.h"
 #include <stdio.h>
 #include "icons.h"
 
@@ -26,6 +31,16 @@
 
 #define AL_ADDR 0x10 // I2C Address
 
+WiFiMulti wifiMulti;       // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
+
+WebServer server(80);       // Create a webserver object that listens for HTTP request on port 80 
+WebSocketsServer webSocket(81);    // create a websocket server on port 81
+
+const char *ssid = "ESP32 Access Point"; // The name of the Wi-Fi network that will be created
+const char *password = "";   // The password required to connect to it, leave blank for an open network
+
+const char* mdnsName = "potplant"; // Domain name for the mDNS responder
+
 // Possible values: .125(1/8), .25(1/4), 1, 2
 // Both .125 and .25 should be used in most cases except darker rooms.
 // A gain of 2 should only be used if the sensor will be covered by a dark
@@ -33,7 +48,7 @@
 float gain = .125;
 // Possible integration times in milliseconds: 800, 400, 200, 100, 50, 25
 // Higher times give higher resolutions and should be used in darker light. 
-int time = 100;
+int integration_time = 100;
 int button_state;
 
 unsigned long lastlight = 0;  // will store last time light was read
@@ -71,11 +86,6 @@ int screeninterval = 5*1000; // interval at which to update display (millisecond
 unsigned long lastpoll = 0;  // will store last time data was polled
 int pollinginterval = 0.1*1000; // interval at which to poll data (milliseconds
 
-WiFiMulti wifiMulti;       // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
-
-WebServer server(80);       // Create a webserver object that listens for HTTP request on port 80 
-WebSocketsServer webSocket(81);    // create a websocket server on port 81
-
 const char *ssid = "ESP32 Access Point"; // The name of the Wi-Fi network that will be created
 const char *password = "";   // The password required to connect to it, leave blank for an open network
 
@@ -91,7 +101,7 @@ void setup() {
   delay(10);
   Serial.println("\r\n");
 
-  startWiFi();                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
+  startWiFi("iBone", "12345678");                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
   
   startOTA();                  // Start the OTA service
   
@@ -99,7 +109,7 @@ void setup() {
 
   startWebSocket();            // Start a WebSocket server
   
-  startMDNS();                 // Start the mDNS responder
+  startMDNS(mdnsName);                 // Start the mDNS responder
 
   startServer();               // Start a HTTP server with a file read handler
 
@@ -142,7 +152,7 @@ void setup() {
   // value, and give different ranges of possible light readings. Check out
   // hoookup guide for more info. 
   light.setGain(gain);
-  light.setIntegTime(time);
+  light.setIntegTime(integration_time);
 
   Serial.println("Reading settings..."); 
   Serial.print("Gain: ");
@@ -201,31 +211,6 @@ void loop() {
   }
 }
 
-void startWiFi() { // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
-  WiFi.softAP(ssid, password);             // Start the access point
-  Serial.print("Access Point \"");
-  Serial.print(ssid);
-  Serial.println("\" started\r\n");
-
-  wifiMulti.addAP("iBone", "12345678");   // add Wi-Fi networks you want to connect to
-
-  Serial.println("Connecting");
-  while (wifiMulti.run() != WL_CONNECTED && WiFi.softAPgetStationNum() < 1) {  // Wait for the Wi-Fi to connect
-    delay(250);
-    Serial.print('.');
-  }
-  Serial.println("\r\n");
-  if(WiFi.softAPgetStationNum() == 0) {      // If the ESP is connected to an AP
-    Serial.print("Connected to ");
-    Serial.println(WiFi.SSID());             // Tell us what network we're connected to
-    Serial.print("IP address:\t");
-    Serial.print(WiFi.localIP());            // Send the IP address of the ESP8266 to the computer
-  } else {                                   // If a station is connected to the ESP SoftAP
-    Serial.print("Station connected to ESP8266 AP");
-  }
-  Serial.println("\r\n");
-}
-
 void startOTA() { // Start the OTA service
   ArduinoOTA.setHostname(OTAName);
   ArduinoOTA.setPassword(OTAPassword);
@@ -249,111 +234,6 @@ void startOTA() { // Start the OTA service
   });
   ArduinoOTA.begin();
   Serial.println("OTA ready\r\n");
-}
-
-void startFileSystem() { // Start the LittleFS and list all contents
-  if (!LittleFS.begin(true)) {
-    Serial.println("An Error has occurred while mounting file system");
-    return;
-  }                             // Start the LittleFS
-  Serial.println("File System started. Contents:");
-  {
-    File root = LittleFS.open("/");
-    File file = root.openNextFile();
-    while (file) {                      // List the file system contents
-      String fileName = file.name();
-      size_t fileSize = file.size();
-      Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
-      file = root.openNextFile();
-    }
-    Serial.printf("\n");
-  }
-}
-
-void startWebSocket() { // Start a WebSocket server
-  webSocket.begin();                          // start the websocket server
-  webSocket.onEvent(webSocketEvent);          // if there's an incomming websocket message, go to function 'webSocketEvent'
-  Serial.println("WebSocket server started.");
-}
-
-void startMDNS() { // Start the mDNS responder
-  MDNS.begin(mdnsName);                        // start the multicast domain name server
-  Serial.print("mDNS responder started: http://");
-  Serial.print(mdnsName);
-  Serial.println(".local");
-}
-
-void startServer() { // Start a HTTP server with a file read handler
-
-  server.on("/time", handleTime);
-
-  server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound'
-                                              // and check if the file exists
-
-  server.begin();                             // start the HTTP server
-  Serial.println("HTTP server started.");
-}
-
-void handleTime() {
-  server.send(200, "text/plain", getTimeString());
-}
-
-void handleNotFound(){ // if the requested file or page doesn't exist, return a 404 not found error
-  if(!handleFileRead(server.uri())){          // check if the file exists in the flash memory (SPIFFS), if so, send it
-    server.send(404, "text/plain", "404: File Not Found");
-  }
-}
-
-bool handleFileRead(String path) { // send the right file to the client (if it exists)
-  Serial.println("handleFileRead: " + path);
-  if (path.endsWith("/")) path += "calendar.html";          // If a folder is requested, send the index file
-  String contentType = getContentType(path);             // Get the MIME type
-  String pathWithGz = path + ".gz";
-  if (LittleFS.exists(pathWithGz) || LittleFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
-    if (LittleFS.exists(pathWithGz))                         // If there's a compressed version available
-      path += ".gz";                                         // Use the compressed verion
-    File file = LittleFS.open(path, "r");                    // Open the file
-    size_t sent = server.streamFile(file, contentType);    // Send it to the client
-    file.close();                                          // Close the file again
-    Serial.println(String("\tSent file: ") + path);
-    return true;
-  }
-  Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
-  return false;
-}
-
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) { // When a WebSocket message is received
-  switch (type) {
-    case WStype_DISCONNECTED:             // if the websocket is disconnected
-      Serial.printf("[%u] Disconnected!\n", num);
-      break;
-    case WStype_CONNECTED: {              // if a new websocket connection is established
-        IPAddress ip = webSocket.remoteIP(num);
-        Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-      }
-      break;
-    case WStype_TEXT:                     // if new text data is received
-      String msg = (const char*)payload;
-      //Serial.println("Received: " + msg);
-
-      // Parse message: "YYYY-MM-DD: Note text"
-      int sepIndex = msg.indexOf(':');
-      if (sepIndex == -1) {
-        Serial.println("Invalid format. Ignoring.");
-        return;
-      }
-
-      String date = msg.substring(0, sepIndex);
-      String note = msg.substring(sepIndex + 2);
-
-      if (date.length() != 10 || note.length() == 0) {
-        Serial.println("Invalid date or empty note.");
-        return;
-      }
-
-      updateOrAddEntry(date, note);
-      break;
-  }
 }
 
 // Function to update or add an entry to notes.txt
@@ -693,10 +573,10 @@ float DetectTemp() {
   }
 }
 
-void addToDataTable(const String path, const String value, const int num_values) {
+void addToDataTable(const String path, const int value, const int num_values) {
   File file = LittleFS.open(path, "r");
 
-  String newContent = value + "\n"; // Header
+  String newContent = String(value) + "\n"; // Header
 
   if (file) {
     int index = 0;
@@ -724,6 +604,147 @@ void addToDataTable(const String path, const String value, const int num_values)
   writeFile.close();
 
 }
+
+void startWiFi(const char *wifissid, const char *wifipassword) { // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
+  WiFi.softAP(ssid, password);             // Start the access point
+  Serial.print("Access Point \"");
+  Serial.print(ssid);
+  Serial.println("\" started\r\n");
+
+  wifiMulti.addAP(wifissid, wifipassword);   // add Wi-Fi networks you want to connect to
+
+  Serial.println("Connecting");
+  while (wifiMulti.run() != WL_CONNECTED && WiFi.softAPgetStationNum() < 1) {  // Wait for the Wi-Fi to connect
+    delay(250);
+    Serial.print('.');
+  }
+  Serial.println("\r\n");
+  if(WiFi.softAPgetStationNum() == 0) {      // If the ESP is connected to an AP
+    Serial.print("Connected to ");
+    Serial.println(WiFi.SSID());             // Tell us what network we're connected to
+    Serial.print("IP address:\t");
+    Serial.print(WiFi.localIP());            // Send the IP address of the ESP8266 to the computer
+  } else {                                   // If a station is connected to the ESP SoftAP
+    Serial.print("Station connected to ESP8266 AP");
+  }
+  Serial.println("\r\n");
+}
+
+void startFileSystem() { // Start the LittleFS and list all contents
+  if (!LittleFS.begin(true)) {
+    Serial.println("An Error has occurred while mounting file system");
+    return;
+  }                             // Start the LittleFS
+  Serial.println("File System started. Contents:");
+  {
+    File root = LittleFS.open("/");
+    File file = root.openNextFile();
+    while (file) {                      // List the file system contents
+      String fileName = file.name();
+      size_t fileSize = file.size();
+      Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
+      file = root.openNextFile();
+    }
+    Serial.printf("\n");
+  }
+}
+
+void startWebSocket() { // Start a WebSocket server
+  webSocket.begin();                          // start the websocket server
+  webSocket.onEvent(webSocketEvent);          // if there's an incomming websocket message, go to function 'webSocketEvent'
+  Serial.println("WebSocket server started.");
+}
+
+void startMDNS() { // Start the mDNS responder
+  MDNS.begin(mdnsName);                        // start the multicast domain name server
+  Serial.print("mDNS responder started: http://");
+  Serial.print(mdnsName);
+  Serial.println(".local");
+}
+
+void startServer() { // Start a HTTP server with a file read handler
+
+  server.on("/time", handleTime);
+
+  server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound'
+                                              // and check if the file exists
+
+  server.begin();                             // start the HTTP server
+  Serial.println("HTTP server started.");
+}
+
+void handleTime() {
+  server.send(200, "text/plain", getTimeString());
+}
+
+void handleNotFound(){ // if the requested file or page doesn't exist, return a 404 not found error
+  if(!handleFileRead(server.uri())){          // check if the file exists in the flash memory (SPIFFS), if so, send it
+    server.send(404, "text/plain", "404: File Not Found");
+  }
+}
+
+bool handleFileRead(String path) { // send the right file to the client (if it exists)
+  Serial.println("handleFileRead: " + path);
+  if (path.endsWith("/")) path += "calendar.html";          // If a folder is requested, send the index file
+  String contentType = getContentType(path);             // Get the MIME type
+  String pathWithGz = path + ".gz";
+  if (LittleFS.exists(pathWithGz) || LittleFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
+    if (LittleFS.exists(pathWithGz))                         // If there's a compressed version available
+      path += ".gz";                                         // Use the compressed verion
+    File file = LittleFS.open(path, "r");                    // Open the file
+    size_t sent = server.streamFile(file, contentType);    // Send it to the client
+    file.close();                                          // Close the file again
+    Serial.println(String("\tSent file: ") + path);
+    return true;
+  }
+  Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
+  return false;
+}
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) { // When a WebSocket message is received
+  switch (type) {
+    case WStype_DISCONNECTED:             // if the websocket is disconnected
+      Serial.printf("[%u] Disconnected!\n", num);
+      break;
+    case WStype_CONNECTED: {              // if a new websocket connection is established
+        IPAddress ip = webSocket.remoteIP(num);
+        Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+      }
+      break;
+    case WStype_TEXT:                     // if new text data is received
+      String msg = (const char*)payload;
+      //Serial.println("Received: " + msg);
+
+      // Parse message: "YYYY-MM-DD: Note text"
+      int sepIndex = msg.indexOf(':');
+      if (sepIndex == -1) {
+        Serial.println("Invalid format. Ignoring.");
+        return;
+      }
+
+      String date = msg.substring(0, sepIndex);
+      String note = msg.substring(sepIndex + 2);
+
+      if (date.length() != 10 || note.length() == 0) {
+        Serial.println("Invalid date or empty note.");
+        return;
+      }
+
+      updateOrAddEntry(date, note);
+      break;
+  }
+}
+
+String formatBytes(size_t bytes) { // convert sizes in bytes to KB and MB
+  if (bytes < 1024) {
+    return String(bytes) + "B";
+  } else if (bytes < (1024 * 1024)) {
+    return String(bytes / 1024.0) + "KB";
+  } else if (bytes < (1024 * 1024 * 1024)) {
+    return String(bytes / 1024.0 / 1024.0) + "MB";
+  }
+}
+
 
 
 
