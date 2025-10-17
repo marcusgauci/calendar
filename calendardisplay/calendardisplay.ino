@@ -19,12 +19,14 @@
 
 #include "time.h"
 
+#include "EPD.h"
 #include <SPI.h>
 #include "EPD_1in54_V2.h"
 #include "GUI_Paint.h"
 #include "DEV_Config.h"
 #include <stdio.h>
 #include "icons.h"
+#include <stdlib.h>
 
 #define DHT11_PIN 3 // will need to change this for esp32
 #define SOIL_PIN 2 // will need to change this for esp32
@@ -123,10 +125,23 @@ void setup() {
 
   int state = 1;
 
-  epd.HDirInit();
-  epd.Clear();
+  DEV_Module_Init();
+  EPD_1IN54_V2_Init();
+  EPD_1IN54_V2_Clear();
+  DEV_Delay_ms(500);
 
-  paint.SetRotate(ROTATE_270);
+  UBYTE *BlackImage;
+  /* you have to edit the startup_stm32fxxx.s file and set a big enough heap size */
+  UWORD Imagesize = ((EPD_1IN54_V2_WIDTH % 8 == 0)? (EPD_1IN54_V2_WIDTH / 8 ): (EPD_1IN54_V2_WIDTH / 8 + 1)) * EPD_1IN54_V2_HEIGHT;
+  if((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL) {
+      printf("Failed to apply for black memory...\r\n");
+      while(1);
+  }
+  printf("Paint_NewImage\r\n");
+  Paint_NewImage(BlackImage, EPD_1IN54_V2_WIDTH, EPD_1IN54_V2_HEIGHT, WHITE);
+ 
+  Paint_SelectImage(BlackImage);
+  Paint_SetRotate(ROTATE_270);
 
   set_background();
   set_time("12:34:56");
@@ -136,9 +151,9 @@ void setup() {
   set_light(34);
   set_temp(56);  
 
-  draw_bitmap(&paint, faces[state], 100, 190, 40, 40, COLORED);
-
-  epd.DisplayFrame();
+  Paint_SelectImage(BlackImage);
+  Paint_DrawImage(faces[state], 100, 190, 40, 40, COLORED);
+  EPD_1IN54_V2_Display(BlackImage);
 
   Wire.begin();
   Serial.begin(115200);
@@ -388,32 +403,36 @@ String getContentType(String filename) { // determine the filetype of a given fi
 
 void set_time(String time){ // expects "HH:MM:SS"
 
-  paint.SetWidth(16);
-  paint.SetHeight(72);
-  paint.Clear(UNCOLORED);
-  paint.DrawStringAt(0, 0, time.substring(0,5), &Font20, COLORED); // we cut off the seconds for display
-  epd.SetFrameMemory(paint.GetImage(), 0, 72, paint.GetWidth(), paint.GetHeight());
-  //epd.DisplayPartFrame();
+  EPD_1IN54_V2_Init();
+  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
+  EPD_1IN54_V2_Init_Partial();
+  Paint_SelectImage(BlackImage);
+  Paint_ClearWindows(16, 72, 16 + Font20.Width * 7, 72 + Font20.Height, WHITE);
+  Paint_DrawString_EN(16, 72, time.substring(0,5), &Font20, BLACK, WHITE); // we cut off the seconds for display
+  EPD_1IN54_V2_DisplayPart(BlackImage);
 }
 
 void set_date(String date){ // expects "YYYY-MM-DD"
   // draw date
-  paint.SetWidth(16);
-  paint.SetHeight(112);
-  paint.Clear(UNCOLORED);
-  paint.DrawStringAt(0, 0, date.substring(2), &Font20, COLORED); // we cut off the century for display
-  epd.SetFrameMemory(paint.GetImage(), 0, 200, paint.GetWidth(), paint.GetHeight());
-  //epd.DisplayPartFrame();
+  EPD_1IN54_V2_Init();
+  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
+  EPD_1IN54_V2_Init_Partial();
+  Paint_SelectImage(BlackImage);
+  Paint_ClearWindows(16, 112, 16 + Font20.Width * 7, 112 + Font20.Height, WHITE);
+  Paint_DrawString_EN(16, 112, date.substring(2), &Font20, BLACK, WHITE); // we cut off the century for display
+  EPD_1IN54_V2_DisplayPart(BlackImage);
 }
 
 void set_message(String buf){
   int num_chars = buf.length();
-  paint.SetWidth(32); 
-  paint.SetHeight(180);
-  paint.Clear(UNCOLORED);
+  EPD_1IN54_V2_Init();
+  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
+  EPD_1IN54_V2_Init_Partial();
+  Paint_SelectImage(BlackImage);
+  Paint_ClearWindows(32, 180, 32 + Font20.Width * 7, 180 + 2 * Font20.Height, WHITE);
   
   if(num_chars < 16){
-    paint.DrawStringAt(0, 0, buf, &Font16, COLORED);
+    Paint_DrawString_EN(32, 180, buf, &Font16, BLACK, WHITE);
   } else {
     char line_1[16] = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '\0'};
     char line_2[16] = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '\0'}; 
@@ -425,25 +444,31 @@ void set_message(String buf){
       line_2[i - 15] = buf[i];
     }
 
-    paint.DrawStringAt(0, 0, line_1, &Font16, COLORED);
-    paint.DrawStringAt(0, 14, line_2, &Font16, COLORED);
+    Paint_DrawString_EN(32, 180, line_1, &Font16, BLACK, WHITE);
+    Paint_DrawString_EN(32, 194, line_2, &Font16, BLACK, WHITE);
   }
 
-  epd.SetFrameMemory(paint.GetImage(), 46, 200, paint.GetWidth(), paint.GetHeight());
+  EPD_1IN54_V2_DisplayPart(BlackImage);
 }
 
 void set_moisture(int moisture){
-  paint.SetWidth(16);
-  paint.SetHeight(20);
-  paint.Clear(UNCOLORED);
-
+  EPD_1IN54_V2_Init();
+  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
+  EPD_1IN54_V2_Init_Partial();
+  Paint_SelectImage(BlackImage);
+  
   char buffer[2];
   sprintf(buffer, "%02d", moisture);
-  paint.DrawStringAt(0, 0, buffer, &Font16, COLORED);
-  epd.SetFrameMemory(paint.GetImage(), 165, 32, paint.GetWidth(), paint.GetHeight());
+
+  Paint_ClearWindows(16, 20, 16 + Font16.Width * 7, 20 + Font16.Height, WHITE);
+  Paint_DrawString_EN(16, 20, buffer, &Font16, BLACK, WHITE); // we cut off the century for display
+  EPD_1IN54_V2_DisplayPart(BlackImage);
+  
 }
 
 void set_light(int light){
+  
+  
   paint.SetWidth(16);
   paint.SetHeight(20);
   paint.Clear(UNCOLORED);
