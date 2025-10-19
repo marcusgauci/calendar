@@ -1,23 +1,24 @@
 body {
-  font-family: "Poppins", Arial, sans-serif;
+  font-family: 'Raleway', sans-serif;
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 40px;
-  background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+  background: linear-gradient(135deg, #ddd0bc, #ddd0bc);
   color: #2e3d27;
 }
 
 /* Calendar container */
 .calendar {
   background: #ffffff;
-  border-radius: 16px;
+  border-radius: 0px;
   overflow: hidden;
   width: 850px;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
-  border: 3px solid #c8e6c9;
+  /*border: 3px solid #c8e6c900;*/
   transition: box-shadow 0.3s ease;
 }
+
 
 .calendar:hover {
   box-shadow: 0 10px 25px rgba(56, 142, 60, 0.2);
@@ -28,11 +29,11 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(90deg, #388e3c, #66bb6a);
+  background: linear-gradient(90deg, #c09b63, #ddd0bc);
   color: #fff;
   padding: 20px;
-  font-size: 1.8em;
-  font-weight: 600;
+  font-size: 5em;
+  font-weight: 200;
   letter-spacing: 1px;
 }
 
@@ -40,13 +41,13 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: rgba(255, 255, 255, 0);
-  border: none;
-  color: white;
-  font-size: 1.8em;
+  background: #f1f8e900;
+  border: 3px solid #c8e6c900;
+  color: #fff;
+  font-size: 1em;
+  font-weight: 300;
   cursor: pointer;
-  border-radius: 25%;
-  width: 45px;
+  width: 120px;
   height: 45px;
   transition: background 0.3s ease, transform 0.2s ease;
   line-height: 1; /* Prevent text misalignment */
@@ -71,7 +72,7 @@ body {
   font-weight: 600;
   font-size: 1.1em;
   letter-spacing: 0.5px;
-  color: #2e7d32;
+  color: #8c5124;
 }
 
 /* Calendar grid */
@@ -86,10 +87,9 @@ body {
 /* Individual day cells */
 .calendar-grid div {
   position: relative; /* Essential for absolute positioning of children */
-  border: 1px solid #c8e6c9;
+  border: 1px solid #8c5124ab;
   padding: 8px;
   box-sizing: border-box;
-  border-radius: 10px;
   font-size: 1em;
   display: flex;
   flex-direction: column;
@@ -107,7 +107,7 @@ body {
 .calendar-grid div > div:first-child {
   font-weight: bold;
   margin-bottom: 5px;
-  color: #2e7d32;
+  color: #8c5124;
 }
 
 .calendar-grid div > small{
@@ -131,10 +131,9 @@ body {
   font-size: 1em;
   padding: 8px;
   box-sizing: border-box;
-  border: 1px solid #a5d6a7;
-  border-radius: 6px;
+  border: 1px solid #8c5124;
   background: #f1f8e9;
-  color: #33691e;
+  color: #8c5124;
   flex-grow: 1;
   line-height: 1.4;
   transition: border-color 0.2s ease, background-color 0.2s ease;
@@ -142,7 +141,7 @@ body {
 }
 
 .calendar-grid textarea:focus {
-  border-color: #66bb6a;
+  border-color: #8c512471;
   background-color: #ffffff;
   outline: none;
 }
@@ -151,7 +150,7 @@ body {
 .char-counter {
   margin-top: 5px;
   font-size: 0.75em;
-  color: #4e6e45;
+  color: #8c5124;
   align-self: flex-end;
 }
 
@@ -159,7 +158,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(90deg, #388e3c, #66bb6a);
+  background: linear-gradient(90deg, #c09b63, #ddd0bc);
   color: #fff;
   padding: 20px;
   font-size: 1.8em;
@@ -175,14 +174,13 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #f1f8e9;
-  border: 3px solid #c8e6c9;
-  color: #4e6e45;
+  background: #f1f8e900;
+  border: 3px solid #c8e6c900;
+  color: #fff;
   font-size: 1em;
   font-weight: 600;
   cursor: pointer;
-  border-radius: 16px;
-  width: 90px;
+  width: 120px;
   height: 45px;
   transition: background 0.3s ease, transform 0.2s ease;
   line-height: 1; /* Prevent text misalignment */
@@ -197,14 +195,13 @@ body {
 }
 
 .calendar-grid .current-date {
-  background: #e8f5e9; /* light green background */
-  border: 2px solid #43a047; /* plant green border */
-  box-shadow: 0 0 8px rgba(67, 160, 71, 0.3);
-  border-radius: 10px;
+  background: #8c51249a; /* light green background */
+  border: 2px solid #8c512400; /* plant green border */
+  box-shadow: 0 0 8px #8c512444;
 }
 
 .calendar-grid .current-date > div:first-child {
-  color: #1b5e20;
+  color: #8c5124;
   font-weight: 700;
 }
 

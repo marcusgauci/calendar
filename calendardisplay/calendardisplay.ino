@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include "icons.h"
 
-#define DHT_PIN 3 // will need to change this for esp32
+#define DHT_PIN 23 // will need to change this for esp32
 #define SOIL_PIN 4 
 #define Motor_Pin 5 
 
@@ -53,6 +53,11 @@ int button_state;
 
 unsigned long lastlight = 0;  // will store last time light was read
 int lightinterval = 10*1000; // interval at which to read light (milliseconds)
+
+// Non-blocking watering state
+bool watering = false;
+unsigned long watering_start = 0;
+unsigned long watering_duration = 0;
 
 Epd epd;
 unsigned char image[1024];
@@ -84,7 +89,7 @@ unsigned long lastscreen = 0;  // will store last time screen was updated
 int screeninterval = 5*1000; // interval at which to update display (milliseconds)
 
 unsigned long lastpoll = 0;  // will store last time data was polled
-int pollinginterval = 0.1*1000; // interval at which to poll data (milliseconds
+int pollinginterval = 2500; // interval at which to poll data (milliseconds
 
 const char *ssid = "ESP32 Access Point"; // The name of the Wi-Fi network that will be created
 const char *password = "";   // The password required to connect to it, leave blank for an open network
@@ -172,26 +177,29 @@ void loop() {
   ArduinoOTA.handle();                        // listen for OTA events
   checkSerialCommand(); 
   
-  int lightlevel = DetectLight();
-  int moisturelevel = getSoilMoisture();
-  int temperature = round(dht.readTemperature());
-  int humidity = round(dht.readHumidity());
+  int lightlevel;
+  int moisturelevel;
+  int temperature;
   int state = 1;
+
+  int lightpct = map(lightlevel, 0, 4000, 0, 100);
+  int temppct = map(temperature, 0, 50, 0, 100);
 
   if (millis() - lastpoll > pollinginterval) {  // if the time since the last update is bigger than the interval
     lastpoll = millis();
+    lightlevel = DetectLight();
+    moisturelevel = getSoilMoisture();
+    temperature = round(dht.readTemperature());
+    Serial.println(dht.readTemperature());
+    Serial.println(temperature);
+    state = 1;
+    char buffer[2];
+    sprintf(buffer, "%02d", temperature);
     
-    addToDataTable("/light.txt", lightlevel, 100);
-    addToDataTable("/moisture.txt", moisturelevel, 100); 
-    addToDataTable("/temp.txt", temperature, 100);
-    addToDataTable("/humidity.txt", humidity, 100);
+    addToDataTable("/light.json", lightlevel, 10);
+    addToDataTable("/moisture.json", moisturelevel, 10); 
+    addToDataTable("/temp.json", int(buffer), 10);
     
-  }
-
-  if (millis() - lastscreen > screeninterval) {  // if the time since the last update is bigger than the interval
-    lastscreen = millis();                    // save the last time you updated the screen
-
-
     set_time(getTimeString());
     set_date(getDateString());
     set_message(chooseDateNote(getDateString()));
@@ -202,7 +210,31 @@ void loop() {
     draw_bitmap(&paint, faces[state], 100, 190, 40, 40, COLORED);
 
     epd.DisplayFrame();
+
+    if (moisturelevel < 25) {
+      waterplant(1000); // water for 5 seconds if moisture is below 30%
+    }
   }
+
+  // Non-blocking watering: stop motor when duration elapsed
+  if (watering) {
+    if (millis() - watering_start >= watering_duration) {
+      digitalWrite(Motor_Pin, LOW);  // turn the motor off
+      watering = false;
+      Serial.println("Watering complete");
+    }
+  }
+}
+
+
+// Start watering for duration_ms milliseconds (non-blocking)
+void waterplant(int duration_ms){
+  if (duration_ms <= 0) return;
+  digitalWrite(Motor_Pin, HIGH); // turn the motor on
+  watering = true;
+  watering_start = millis();
+  watering_duration = (unsigned long)duration_ms;
+  Serial.println("Watering started");
 }
 
 void startOTA() { // Start the OTA service
@@ -444,7 +476,7 @@ void set_light(int light){
   char buffer[4];
   sprintf(buffer, "%02d", light);
   paint.DrawStringAt(0, 0, buffer, &Font16, COLORED);
-  epd.SetFrameMemory(paint.GetImage(), 165, 102, paint.GetWidth(), paint.GetHeight());
+  epd.SetFrameMemory(paint.GetImage(), 165, 112, paint.GetWidth(), paint.GetHeight());
 }
 
 void set_temp(int temp){
@@ -555,41 +587,67 @@ int DetectLight() {
 
 int getSoilMoisture() {
   int sensor_value = analogRead(SOIL_PIN);
-  int moisture = map(sensor_value, 1023, 700, 0, 99); // map to percentage
+  int moisture = map(sensor_value, 1023, 925, 0, 99); // map to percentage
   moisture = constrain(moisture, 0, 99); // constrain to 0-100%
   return moisture;
 }
 
 void addToDataTable(const String path, const int value, const int num_values) {
+  // Build new JSON object with current date/time and the value
+  String timestamp = getDateString().substring(5) + " " + getTimeString().substring(0,5); // "MM-DD HH:MM"
+  String newEntry = String("{\"time\":\"") + timestamp + String("\",\"value\":") + String(value) + String("}");
+
+  // Read existing file content (if any)
   File file = LittleFS.open(path, "r");
 
-  String newContent = String(value) + "\n"; // Header
+  // We'll collect existing entries (as JSON object strings) in an array so we can truncate
+  String *entries = new String[num_values];
+  int entriesCount = 0;
 
   if (file) {
-    int index = 0;
-    while (file.available() && index < num_values) {
-      String line = file.readStringUntil('\n');
-      line.trim();
-      
-      newContent += line + "\n";  // Keep other lines
-      index++;
-    }
-    if (index < num_values) {
-      newContent += "0\n"; // Append new value if there's space
-      index++;
+    String content = file.readString();
+    content.trim();
+
+    if (content.length() > 0) {
+      // If content contains JSON objects ( '{' '}' ), extract them
+      if (content.indexOf('{') != -1) {
+        int idx = 0;
+        while (true) {
+          int s = content.indexOf('{', idx);
+          if (s == -1) break;
+          int e = content.indexOf('}', s);
+          if (e == -1) break;
+          String obj = content.substring(s, e + 1);
+          obj.trim();
+          if (obj.length() > 0 && entriesCount < num_values) {
+            entries[entriesCount++] = obj;
+          }
+          idx = e + 1;
+        }
+      } 
+      }
     }
     file.close();
-  }
 
-  // Overwrite file
+  // Build new JSON array with the newEntry first, then as many existing entries as will fit
+  String newContent = "[" + newEntry;
+  int maxExisting = max(0, num_values - 1);
+  for (int i = 0; i < entriesCount && i < maxExisting; i++) {
+    newContent += "," + entries[i];
+  }
+  newContent += "]\n";
+
+  // Write back
   File writeFile = LittleFS.open(path, "w");
   if (!writeFile) {
     Serial.println("Failed to write to file.");
+    delete[] entries;
     return;
   }
   writeFile.print(newContent);
   writeFile.close();
 
+  delete[] entries;
 }
 
 void startWiFi(const char *wifissid, const char *wifipassword) { // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
@@ -672,7 +730,7 @@ void handleNotFound(){ // if the requested file or page doesn't exist, return a 
 
 bool handleFileRead(String path) { // send the right file to the client (if it exists)
   Serial.println("handleFileRead: " + path);
-  if (path.endsWith("/")) path += "calendar.html";          // If a folder is requested, send the index file
+  if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
   String contentType = getContentType(path);             // Get the MIME type
   String pathWithGz = path + ".gz";
   if (LittleFS.exists(pathWithGz) || LittleFS.exists(path)) { // If the file exists, either as a compressed archive, or normal
@@ -700,6 +758,11 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       break;
     case WStype_TEXT:                     // if new text data is received
       String msg = (const char*)payload;
+      if (msg == "waterplant") {
+        waterplant(1000); // water for 1 second
+        Serial.println("Watering plant via WebSocket command");
+        return;
+      }
       //Serial.println("Received: " + msg);
 
       // Parse message: "YYYY-MM-DD: Note text"
