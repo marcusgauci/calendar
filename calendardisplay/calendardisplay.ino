@@ -15,33 +15,31 @@
 
 #include <Wire.h>
 #include "SparkFun_VEML6030_Ambient_Light_Sensor.h"
-#include <dht.h>
+#include "DHT.h"
 
 #include "time.h"
 
-#include "EPD.h"
 #include <SPI.h>
-#include "EPD_1in54_V2.h"
-#include "GUI_Paint.h"
-#include "DEV_Config.h"
+#include "epd1in54_V2.h"
+#include "epdpaint.h"
 #include <stdio.h>
 #include "icons.h"
-#include <stdlib.h>
 
-#define DHT11_PIN 3 // will need to change this for esp32
-#define SOIL_PIN 2 // will need to change this for esp32
+#define DHT_PIN 3 // will need to change this for esp32
+#define SOIL_PIN 4 
+#define Motor_Pin 5 
 
 #define AL_ADDR 0x10 // I2C Address
+
+#define DHTTYPE DHT11   // DHT 11
+DHT dht(DHT_PIN, DHTTYPE);
+
+SparkFun_Ambient_Light light(AL_ADDR);
 
 WiFiMulti wifiMulti;       // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 
 WebServer server(80);       // Create a webserver object that listens for HTTP request on port 80 
 WebSocketsServer webSocket(81);    // create a websocket server on port 81
-
-const char *ssid = "ESP32 Access Point"; // The name of the Wi-Fi network that will be created
-const char *password = "";   // The password required to connect to it, leave blank for an open network
-
-const char* mdnsName = "potplant"; // Domain name for the mDNS responder
 
 // Possible values: .125(1/8), .25(1/4), 1, 2
 // Both .125 and .25 should be used in most cases except darker rooms.
@@ -125,23 +123,10 @@ void setup() {
 
   int state = 1;
 
-  DEV_Module_Init();
-  EPD_1IN54_V2_Init();
-  EPD_1IN54_V2_Clear();
-  DEV_Delay_ms(500);
+  epd.HDirInit();
+  epd.Clear();
 
-  UBYTE *BlackImage;
-  /* you have to edit the startup_stm32fxxx.s file and set a big enough heap size */
-  UWORD Imagesize = ((EPD_1IN54_V2_WIDTH % 8 == 0)? (EPD_1IN54_V2_WIDTH / 8 ): (EPD_1IN54_V2_WIDTH / 8 + 1)) * EPD_1IN54_V2_HEIGHT;
-  if((BlackImage = (UBYTE *)malloc(Imagesize)) == NULL) {
-      printf("Failed to apply for black memory...\r\n");
-      while(1);
-  }
-  printf("Paint_NewImage\r\n");
-  Paint_NewImage(BlackImage, EPD_1IN54_V2_WIDTH, EPD_1IN54_V2_HEIGHT, WHITE);
- 
-  Paint_SelectImage(BlackImage);
-  Paint_SetRotate(ROTATE_270);
+  paint.SetRotate(ROTATE_270);
 
   set_background();
   set_time("12:34:56");
@@ -151,12 +136,11 @@ void setup() {
   set_light(34);
   set_temp(56);  
 
-  Paint_SelectImage(BlackImage);
-  Paint_DrawImage(faces[state], 100, 190, 40, 40, COLORED);
-  EPD_1IN54_V2_Display(BlackImage);
+  draw_bitmap(&paint, faces[state], 100, 190, 40, 40, COLORED);
 
-  Wire.begin();
-  Serial.begin(115200);
+  epd.DisplayFrame();
+
+  Wire.begin(0,1);
 
   if(light.begin())
     Serial.println("Ready to sense some light!"); 
@@ -176,6 +160,9 @@ void setup() {
   Serial.print(" Integration Time: ");
   int timeVal = light.readIntegTime();
   Serial.println(timeVal);
+
+  analogSetPinAttenuation(SOIL_PIN, ADC_11db); // soil moisture pin
+  pinMode(Motor_Pin, OUTPUT);
   
 }
 
@@ -186,8 +173,10 @@ void loop() {
   checkSerialCommand(); 
   
   int lightlevel = DetectLight();
-  int moisturelevel = 12;
-  int temperature = round(DetectTemp());
+  int moisturelevel = getSoilMoisture();
+  int temperature = round(dht.readTemperature());
+  int humidity = round(dht.readHumidity());
+  int state = 1;
 
   if (millis() - lastpoll > pollinginterval) {  // if the time since the last update is bigger than the interval
     lastpoll = millis();
@@ -195,6 +184,7 @@ void loop() {
     addToDataTable("/light.txt", lightlevel, 100);
     addToDataTable("/moisture.txt", moisturelevel, 100); 
     addToDataTable("/temp.txt", temperature, 100);
+    addToDataTable("/humidity.txt", humidity, 100);
     
   }
 
@@ -212,17 +202,6 @@ void loop() {
     draw_bitmap(&paint, faces[state], 100, 190, 40, 40, COLORED);
 
     epd.DisplayFrame();
-  }
-
-  Serial.print("Ambient Light Reading: ");
-  Serial.print(DetectLight());
-  Serial.println(" Lux");
-  Serial.print("Temperature = ");
-  Serial.println(DetectTemp());
-  if (millis() - lastlight > lightinterval) {  // if the time since the last update is bigger than the interval
-    lastlight = millis();                    // save the last time you updated the screen
-    int sensor_value = analogRead(SOIL_PIN);
-    Serial.println(sensor_value);
   }
 }
 
@@ -394,7 +373,7 @@ String getDateString() {
 String getContentType(String filename) { // determine the filetype of a given filename, based on the extension
   if (filename.endsWith(".html")) return "text/html";
   else if (filename.endsWith(".css")) return "text/css";
-  else if (filename.endswith(".txt")) return "text/plain";
+  else if (filename.endsWith(".txt")) return "text/plain";
   else if (filename.endsWith(".js")) return "application/javascript";
   else if (filename.endsWith(".ico")) return "image/x-icon";
   else if (filename.endsWith(".gz")) return "application/x-gzip";
@@ -402,37 +381,30 @@ String getContentType(String filename) { // determine the filetype of a given fi
 }
 
 void set_time(String time){ // expects "HH:MM:SS"
-
-  EPD_1IN54_V2_Init();
-  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
-  EPD_1IN54_V2_Init_Partial();
-  Paint_SelectImage(BlackImage);
-  Paint_ClearWindows(16, 72, 16 + Font20.Width * 7, 72 + Font20.Height, WHITE);
-  Paint_DrawString_EN(16, 72, time.substring(0,5), &Font20, BLACK, WHITE); // we cut off the seconds for display
-  EPD_1IN54_V2_DisplayPart(BlackImage);
+  paint.SetWidth(16);
+  paint.SetHeight(72);
+  paint.Clear(UNCOLORED);
+  paint.DrawStringAt(0, 0, time.substring(0,5).c_str(), &Font20, COLORED);
+  epd.SetFrameMemory(paint.GetImage(), 0, 72, paint.GetWidth(), paint.GetHeight());
 }
 
 void set_date(String date){ // expects "YYYY-MM-DD"
-  // draw date
-  EPD_1IN54_V2_Init();
-  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
-  EPD_1IN54_V2_Init_Partial();
-  Paint_SelectImage(BlackImage);
-  Paint_ClearWindows(16, 112, 16 + Font20.Width * 7, 112 + Font20.Height, WHITE);
-  Paint_DrawString_EN(16, 112, date.substring(2), &Font20, BLACK, WHITE); // we cut off the century for display
-  EPD_1IN54_V2_DisplayPart(BlackImage);
+  paint.SetWidth(16);
+  paint.SetHeight(112);
+  paint.Clear(UNCOLORED);
+  paint.DrawStringAt(0, 0, date.substring(2).c_str(), &Font20, COLORED);
+  epd.SetFrameMemory(paint.GetImage(), 0, 200, paint.GetWidth(), paint.GetHeight());
 }
 
 void set_message(String buf){
+
   int num_chars = buf.length();
-  EPD_1IN54_V2_Init();
-  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
-  EPD_1IN54_V2_Init_Partial();
-  Paint_SelectImage(BlackImage);
-  Paint_ClearWindows(32, 180, 32 + Font20.Width * 7, 180 + 2 * Font20.Height, WHITE);
+  paint.SetWidth(32); 
+  paint.SetHeight(180);
+  paint.Clear(UNCOLORED);
   
   if(num_chars < 16){
-    Paint_DrawString_EN(32, 180, buf, &Font16, BLACK, WHITE);
+    paint.DrawStringAt(0, 0, buf.c_str(), &Font16, COLORED);
   } else {
     char line_1[16] = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '\0'};
     char line_2[16] = {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '\0'}; 
@@ -444,39 +416,35 @@ void set_message(String buf){
       line_2[i - 15] = buf[i];
     }
 
-    Paint_DrawString_EN(32, 180, line_1, &Font16, BLACK, WHITE);
-    Paint_DrawString_EN(32, 194, line_2, &Font16, BLACK, WHITE);
+    paint.DrawStringAt(0, 0, line_1, &Font16, COLORED);
+    paint.DrawStringAt(0, 14, line_2, &Font16, COLORED);
   }
 
-  EPD_1IN54_V2_DisplayPart(BlackImage);
+  epd.SetFrameMemory(paint.GetImage(), 46, 200, paint.GetWidth(), paint.GetHeight());
 }
+
 
 void set_moisture(int moisture){
-  EPD_1IN54_V2_Init();
-  EPD_1IN54_V2_DisplayPartBaseImage(BlackImage);
-  EPD_1IN54_V2_Init_Partial();
-  Paint_SelectImage(BlackImage);
-  
-  char buffer[2];
-  sprintf(buffer, "%02d", moisture);
-
-  Paint_ClearWindows(16, 20, 16 + Font16.Width * 7, 20 + Font16.Height, WHITE);
-  Paint_DrawString_EN(16, 20, buffer, &Font16, BLACK, WHITE); // we cut off the century for display
-  EPD_1IN54_V2_DisplayPart(BlackImage);
-  
-}
-
-void set_light(int light){
-  
-  
   paint.SetWidth(16);
   paint.SetHeight(20);
   paint.Clear(UNCOLORED);
 
   char buffer[2];
+  sprintf(buffer, "%02d", moisture);
+  paint.DrawStringAt(0, 0, buffer, &Font16, COLORED);
+  epd.SetFrameMemory(paint.GetImage(), 165, 32, paint.GetWidth(), paint.GetHeight());
+  
+}
+
+void set_light(int light){
+  paint.SetWidth(16);
+  paint.SetHeight(60);
+  paint.Clear(UNCOLORED);
+
+  char buffer[4];
   sprintf(buffer, "%02d", light);
   paint.DrawStringAt(0, 0, buffer, &Font16, COLORED);
-  epd.SetFrameMemory(paint.GetImage(), 165, 82, paint.GetWidth(), paint.GetHeight());
+  epd.SetFrameMemory(paint.GetImage(), 165, 102, paint.GetWidth(), paint.GetHeight());
 }
 
 void set_temp(int temp){
@@ -580,22 +548,16 @@ void draw_bitmap(Paint* paint, const unsigned char* bitmap, int x0, int y0, int 
     epd.SetFrameMemory(paint->GetImage(), x0, y0, paint->GetWidth(), paint->GetHeight());
 }
 
-
 int DetectLight() {
   long luxVal = light.readLight();
   return luxVal;
 }
 
-float DetectTemp() {
-  int chk = DHT.read11(DHT11_PIN); 
-
-  if (chk == DHTLIB_OK) {
-    return DHT.temperature; 
-  } else {
-    Serial.print("DHT read failed. Error code: ");
-    Serial.println(chk);
-    return -999;                 
-  }
+int getSoilMoisture() {
+  int sensor_value = analogRead(SOIL_PIN);
+  int moisture = map(sensor_value, 1023, 700, 0, 99); // map to percentage
+  moisture = constrain(moisture, 0, 99); // constrain to 0-100%
+  return moisture;
 }
 
 void addToDataTable(const String path, const int value, const int num_values) {
@@ -680,10 +642,10 @@ void startWebSocket() { // Start a WebSocket server
   Serial.println("WebSocket server started.");
 }
 
-void startMDNS() { // Start the mDNS responder
-  MDNS.begin(mdnsName);                        // start the multicast domain name server
+void startMDNS(String Name) { // Start the mDNS responder
+  MDNS.begin(Name);                        // start the multicast domain name server
   Serial.print("mDNS responder started: http://");
-  Serial.print(mdnsName);
+  Serial.print(Name);
   Serial.println(".local");
 }
 
@@ -759,17 +721,5 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       break;
   }
 }
-
-String formatBytes(size_t bytes) { // convert sizes in bytes to KB and MB
-  if (bytes < 1024) {
-    return String(bytes) + "B";
-  } else if (bytes < (1024 * 1024)) {
-    return String(bytes / 1024.0) + "KB";
-  } else if (bytes < (1024 * 1024 * 1024)) {
-    return String(bytes / 1024.0 / 1024.0) + "MB";
-  }
-}
-
-
 
 

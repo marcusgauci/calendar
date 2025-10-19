@@ -23,7 +23,7 @@
 #include <Wire.h>
 #include "SparkFun_VEML6030_Ambient_Light_Sensor.h"
 
-#define AL_ADDR 0x10
+#define AL_ADDR 0x48
 
 SparkFun_Ambient_Light light(AL_ADDR);
 

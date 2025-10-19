@@ -1,11 +1,11 @@
 /*****************************************************************************
-* | File      	:   DEV_Config.h
+* | File      	:   epd1in54_V2.h
 * | Author      :   Waveshare team
-* | Function    :   Hardware underlying interface
+* | Function    :   1.54inch e-paper V2
 * | Info        :
 *----------------
 * |	This version:   V1.0
-* | Date        :   2020-02-19
+* | Date        :   2019-06-24
 * | Info        :
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27,49 +27,57 @@
 # THE SOFTWARE.
 #
 ******************************************************************************/
-#ifndef _DEV_CONFIG_H_
-#define _DEV_CONFIG_H_
 
-#include <Arduino.h>
-#include <stdint.h>
-#include <stdio.h>
+#ifndef epd1in54_V2_H
+#define epd1in54_V2_H
 
-/**
- * data
-**/
-#define UBYTE   uint8_t
-#define UWORD   uint16_t
-#define UDOUBLE uint32_t
+#include "epdif.h"
 
-/**
- * GPIO config
-**/
-#define EPD_SCK_PIN  13
-#define EPD_MOSI_PIN 14
-#define EPD_CS_PIN   15
-#define EPD_RST_PIN  26
-#define EPD_DC_PIN   27
-#define EPD_BUSY_PIN 25
+// Display resolution
+#define EPD_WIDTH       400
+#define EPD_HEIGHT      400
 
-#define GPIO_PIN_SET   1
-#define GPIO_PIN_RESET 0
+class Epd : EpdIf
+{
+public:
+	unsigned long width;
+	unsigned long height;
 
-/**
- * GPIO read and write
-**/
-#define DEV_Digital_Write(_pin, _value) digitalWrite(_pin, _value == 0? LOW:HIGH)
-#define DEV_Digital_Read(_pin) digitalRead(_pin)
+	Epd();
+	~Epd();
+	// int  Init(void);
+	int LDirInit(void);
+	int HDirInit(void);
+	void SendCommand(unsigned char command);
+	void SendData(unsigned char data);
+	void WaitUntilIdle(void);
+	void Reset(void);
+	void Clear(void);
+	void Display(const unsigned char* frame_buffer);
+	void DisplayPartBaseImage(const unsigned char* frame_buffer);
+	void DisplayPartBaseWhiteImage(void);
+	void DisplayPart(const unsigned char* frame_buffer);
+	void SetFrameMemory(
+	        const unsigned char* image_buffer,
+	        int x,
+	        int y,
+	        int image_width,
+	        int image_height
+	);
+	void DisplayFrame(void);
+	void DisplayPartFrame(void);
 
-/**
- * delay x ms
-**/
-#define DEV_Delay_ms(__xms) delay(__xms)
+	void Sleep(void);
+private:
+	unsigned int reset_pin;
+	unsigned int dc_pin;
+	unsigned int cs_pin;
+	unsigned int busy_pin;
 
-/*------------------------------------------------------------------------------------------------------*/
-UBYTE DEV_Module_Init(void);
-void GPIO_Mode(UWORD GPIO_Pin, UWORD Mode);
-void DEV_SPI_WriteByte(UBYTE data);
-UBYTE DEV_SPI_ReadByte();
-void DEV_SPI_Write_nByte(UBYTE *pData, UDOUBLE len);
+	void SetMemoryArea(int x_start, int y_start, int x_end, int y_end);
+	void SetMemoryPointer(int x, int y);
+};
 
-#endif
+#endif /* EPD1IN54B_H */
+
+/* END OF FILE */
