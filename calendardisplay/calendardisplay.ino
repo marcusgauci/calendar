@@ -25,14 +25,15 @@
 #include <stdio.h>
 #include "icons.h"
 
-#define DHT_PIN 23 // will need to change this for esp32
+#define DHT11_PIN 23 // will need to change this for esp32
 #define SOIL_PIN 4 
 #define Motor_Pin 5 
 
 #define AL_ADDR 0x10 // I2C Address
 
 #define DHTTYPE DHT11   // DHT 11
-DHT dht(DHT_PIN, DHTTYPE);
+
+DHT dht(DHT11_PIN, DHTTYPE);
 
 SparkFun_Ambient_Light light(AL_ADDR);
 
@@ -89,7 +90,7 @@ unsigned long lastscreen = 0;  // will store last time screen was updated
 int screeninterval = 5*1000; // interval at which to update display (milliseconds)
 
 unsigned long lastpoll = 0;  // will store last time data was polled
-int pollinginterval = 2500; // interval at which to poll data (milliseconds
+int pollinginterval = 10*1000; // interval at which to poll data (milliseconds
 
 const char *ssid = "ESP32 Access Point"; // The name of the Wi-Fi network that will be created
 const char *password = "";   // The password required to connect to it, leave blank for an open network
@@ -105,6 +106,8 @@ void setup() {
   Serial.begin(115200);        // Start the Serial communication to send messages to the computer
   delay(10);
   Serial.println("\r\n");
+
+  dht.begin();
 
   startWiFi("iBone", "12345678");                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
   
@@ -179,26 +182,26 @@ void loop() {
   
   int lightlevel;
   int moisturelevel;
-  int temperature;
+  float temperature;
   int state = 1;
 
   int lightpct = map(lightlevel, 0, 4000, 0, 100);
   int temppct = map(temperature, 0, 50, 0, 100);
 
   if (millis() - lastpoll > pollinginterval) {  // if the time since the last update is bigger than the interval
+    
+    
     lastpoll = millis();
     lightlevel = DetectLight();
     moisturelevel = getSoilMoisture();
-    temperature = round(dht.readTemperature());
-    Serial.println(dht.readTemperature());
-    Serial.println(temperature);
-    state = 1;
-    char buffer[2];
-    sprintf(buffer, "%02d", temperature);
+    temperature = dht.readTemperature();
+
+    state = smileyvalue(temperature, moisturelevel, lightlevel);
+
     
-    addToDataTable("/light.json", lightlevel, 10);
-    addToDataTable("/moisture.json", moisturelevel, 10); 
-    addToDataTable("/temp.json", int(buffer), 10);
+    addToDataTable("/light.json", lightlevel, 30);
+    addToDataTable("/moisture.json", moisturelevel, 30); 
+    addToDataTable("/temp.json", 21, 30);
     
     set_time(getTimeString());
     set_date(getDateString());
@@ -212,7 +215,7 @@ void loop() {
     epd.DisplayFrame();
 
     if (moisturelevel < 25) {
-      waterplant(1000); // water for 5 seconds if moisture is below 30%
+      waterplant(1000); // water for 1 second if moisture is below 30%
     }
   }
 
@@ -221,11 +224,35 @@ void loop() {
     if (millis() - watering_start >= watering_duration) {
       digitalWrite(Motor_Pin, LOW);  // turn the motor off
       watering = false;
-      Serial.println("Watering complete");
+      //Serial.println("Watering complete");
     }
   }
 }
 
+int smileyvalue(int temperature, int moisture, int light){
+  int tempval;
+  if (temperature < 5 || temperature > 30) tempval =  4;
+  else if (temperature < 10 || temperature > 28) tempval = 3;
+  else if (temperature < 15 || temperature > 25) tempval = 2;
+  else if (temperature < 18 || temperature > 22) tempval = 1;
+  else tempval = 0;
+
+  int moistval;
+  if (moisture < 10 || moisture > 95) moistval = 4;
+  else if (moisture < 15 || moisture > 90) moistval = 3;
+  else if (moisture < 20 || moisture > 85) moistval = 2;
+  else if (moisture < 30 || moisture > 85) moistval = 1;
+  else moistval = 0;
+
+  int lightval;
+  if (light < 50 || light > 4000) lightval = 4;
+  else if (light < 150 || light > 2000) lightval = 3;
+  else if (light < 300 || light > 1500) lightval = 2;
+  else if (light < 400 || light > 1200) lightval = 1;
+  else lightval = 0;
+
+  return max(tempval, max(moistval, lightval));
+}
 
 // Start watering for duration_ms milliseconds (non-blocking)
 void waterplant(int duration_ms){
@@ -234,7 +261,7 @@ void waterplant(int duration_ms){
   watering = true;
   watering_start = millis();
   watering_duration = (unsigned long)duration_ms;
-  Serial.println("Watering started");
+  //Serial.println("Watering started");
 }
 
 void startOTA() { // Start the OTA service
@@ -729,7 +756,7 @@ void handleNotFound(){ // if the requested file or page doesn't exist, return a 
 }
 
 bool handleFileRead(String path) { // send the right file to the client (if it exists)
-  Serial.println("handleFileRead: " + path);
+  //Serial.println("handleFileRead: " + path);
   if (path.endsWith("/")) path += "index.html";          // If a folder is requested, send the index file
   String contentType = getContentType(path);             // Get the MIME type
   String pathWithGz = path + ".gz";
@@ -739,7 +766,7 @@ bool handleFileRead(String path) { // send the right file to the client (if it e
     File file = LittleFS.open(path, "r");                    // Open the file
     size_t sent = server.streamFile(file, contentType);    // Send it to the client
     file.close();                                          // Close the file again
-    Serial.println(String("\tSent file: ") + path);
+    //Serial.println(String("\tSent file: ") + path);
     return true;
   }
   Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
