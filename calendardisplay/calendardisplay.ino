@@ -201,7 +201,7 @@ void loop() {
     
     addToDataTable("/light.json", lightlevel, 30);
     addToDataTable("/moisture.json", moisturelevel, 30); 
-    addToDataTable("/temp.json", 21, 30);
+    addToDataTable("/temp.json", temperature, 30);
     
     set_time(getTimeString());
     set_date(getDateString());
@@ -238,17 +238,17 @@ int smileyvalue(int temperature, int moisture, int light){
   else tempval = 0;
 
   int moistval;
-  if (moisture < 10 || moisture > 95) moistval = 4;
-  else if (moisture < 15 || moisture > 90) moistval = 3;
-  else if (moisture < 20 || moisture > 85) moistval = 2;
-  else if (moisture < 30 || moisture > 85) moistval = 1;
+  if (moisture < 10 ) moistval = 4;
+  else if (moisture < 15 ) moistval = 3;
+  else if (moisture < 20 ) moistval = 2;
+  else if (moisture < 30 ) moistval = 1;
   else moistval = 0;
 
   int lightval;
-  if (light < 50 || light > 4000) lightval = 4;
-  else if (light < 150 || light > 2000) lightval = 3;
-  else if (light < 300 || light > 1500) lightval = 2;
-  else if (light < 400 || light > 1200) lightval = 1;
+  if (light < 50 ) lightval = 4;
+  else if (light < 150) lightval = 3;
+  else if (light < 300) lightval = 2;
+  else if (light < 400) lightval = 1;
   else lightval = 0;
 
   return max(tempval, max(moistval, lightval));
@@ -358,7 +358,7 @@ String chooseDateNote(const String& date) {
     file.close();
   }
   if (!found) {
-    return "Nothing on today brochacho";
+    return "Nothing on!";
   }
 }
 
@@ -614,8 +614,9 @@ int DetectLight() {
 
 int getSoilMoisture() {
   int sensor_value = analogRead(SOIL_PIN);
-  int moisture = map(sensor_value, 1023, 925, 0, 99); // map to percentage
-  moisture = constrain(moisture, 0, 99); // constrain to 0-100%
+  Serial.println(sensor_value);
+  int moisture = map(sensor_value, 3280, 0, 0, 99); // map to percentage
+  moisture = constrain(moisture, 0, 99); // constrain to 0-99%
   return moisture;
 }
 
